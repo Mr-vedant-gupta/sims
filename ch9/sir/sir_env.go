@@ -24,6 +24,9 @@ const (
 
 // SIREnv implements the store-ignore-recall task
 type SIREnv struct {
+	// Swap the role of store/ignore in reward sturcture
+	SwapStoreIgnore bool
+
 	// name of this environment
 	Name string
 
@@ -122,6 +125,7 @@ func (ev *SIREnv) SetState() {
 func (ev *SIREnv) SetReward(netout int) bool {
 	cor := ev.Stim // already correct
 	rw := netout == cor
+	fmt.Printf("SetReward called: netout = %d, cor = %d\n", netout, cor)
 	if rw {
 		ev.Reward.Values[0] = float64(ev.RewVal)
 	} else {
@@ -132,9 +136,13 @@ func (ev *SIREnv) SetReward(netout int) bool {
 
 // Step the SIR task
 func (ev *SIREnv) StepSIR() {
+	fmt.Printf("Swap: %t\n", ev.SwapStoreIgnore)
 	for {
 		ev.Act = Actions(rand.Intn(int(ActionsN)))
-		if ev.Act == Store && ev.Maint >= 0 { // already full
+		if ev.Act == Store && ev.Maint >= 0 && !ev.SwapStoreIgnore { // already full
+			continue
+		}
+		if ev.Act == Ignore && ev.Maint >= 0 && ev.SwapStoreIgnore {
 			continue
 		}
 		if ev.Act == Recall && ev.Maint < 0 { // nothign
@@ -145,8 +153,21 @@ func (ev *SIREnv) StepSIR() {
 	ev.Stim = rand.Intn(ev.NStim)
 	switch ev.Act {
 	case Store:
-		ev.Maint = ev.Stim
+		if ev.SwapStoreIgnore {
+			// Ignore behavior when swapped
+			// No operation needed here
+		} else {
+			// Store behavior
+			ev.Maint = ev.Stim
+		}
 	case Ignore:
+		if ev.SwapStoreIgnore {
+			// Store behavior when swapped
+			ev.Maint = ev.Stim
+		} else {
+			// Ignore behavior
+			// No operation needed here
+		}
 	case Recall:
 		ev.Stim = ev.Maint
 		ev.Maint = -1

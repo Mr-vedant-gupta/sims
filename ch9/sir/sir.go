@@ -220,6 +220,9 @@ type Config struct {
 // for the fields which provide hints to how things should be displayed).
 type Sim struct {
 
+	// Swap the role of store/ignore in reward sturcture
+	SwapStoreIgnore bool
+
 	// BurstDaGain is the strength of dopamine bursts: 1 default -- reduce for PD OFF, increase for PD ON
 	BurstDaGain float32
 
@@ -276,6 +279,7 @@ func (ss *Sim) New() {
 func (ss *Sim) Defaults() {
 	ss.BurstDaGain = 1
 	ss.DipDaGain = 1
+	ss.SwapStoreIgnore = false
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -306,12 +310,14 @@ func (ss *Sim) ConfigEnv() {
 	trn.RewVal = 1
 	trn.NoRewVal = 0
 	trn.Trial.Max = ss.Config.NTrials
+	trn.SwapStoreIgnore = ss.SwapStoreIgnore
 
 	tst.Name = etime.Test.String()
 	tst.SetNStim(4)
 	tst.RewVal = 1
 	tst.NoRewVal = 0
 	tst.Trial.Max = ss.Config.NTrials
+	tst.SwapStoreIgnore = ss.SwapStoreIgnore
 
 	trn.Init(0)
 	tst.Init(0)
@@ -397,6 +403,21 @@ func (ss *Sim) ApplyParams() {
 	matg.Matrix.DipGain = ss.DipDaGain
 	matn.Matrix.BurstGain = ss.BurstDaGain
 	matn.Matrix.DipGain = ss.DipDaGain
+
+	// Retrieve training and testing environments and update SwapStoreIgnore
+	trn := ss.Envs.ByMode(etime.Train)
+	if sirEnv, ok := trn.(*SIREnv); ok && sirEnv != nil {
+		sirEnv.SwapStoreIgnore = ss.SwapStoreIgnore
+	} else {
+		fmt.Println("Failed to retrieve train environment or invalid type")
+	}
+
+	tst := ss.Envs.ByMode(etime.Test)
+	if sirEnv, ok := tst.(*SIREnv); ok && sirEnv != nil {
+		sirEnv.SwapStoreIgnore = ss.SwapStoreIgnore
+	} else {
+		fmt.Println("Failed to retrieve test environment or invalid type")
+	}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -405,6 +426,7 @@ func (ss *Sim) ApplyParams() {
 // Init restarts the run, and initializes everything, including network weights
 // and resets the epoch log table
 func (ss *Sim) Init() {
+	fmt.Println("Pressed Init")
 	ss.Stats.SetString("RunName", ss.Params.RunName(0)) // in case user interactively changes tag
 	ss.Loops.ResetCounters()
 	ss.InitRandSeed(0)
