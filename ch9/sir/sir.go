@@ -223,6 +223,10 @@ type Sim struct {
 	// Swap the role of store/ignore in reward sturcture
 	SwapStoreIgnore bool
 
+	// The probability of rewarding a correct and incorrect recall
+	RewardCorrectProb   float32
+	RewardIncorrectProb float32
+
 	// BurstDaGain is the strength of dopamine bursts: 1 default -- reduce for PD OFF, increase for PD ON
 	BurstDaGain float32
 
@@ -280,6 +284,8 @@ func (ss *Sim) Defaults() {
 	ss.BurstDaGain = 1
 	ss.DipDaGain = 1
 	ss.SwapStoreIgnore = false
+	ss.RewardCorrectProb = 1
+	ss.RewardIncorrectProb = 0
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -311,6 +317,8 @@ func (ss *Sim) ConfigEnv() {
 	trn.NoRewVal = 0
 	trn.Trial.Max = ss.Config.NTrials
 	trn.SwapStoreIgnore = ss.SwapStoreIgnore
+	trn.RewardCorrectProb = ss.RewardCorrectProb
+	trn.RewardIncorrectProb = ss.RewardIncorrectProb
 
 	tst.Name = etime.Test.String()
 	tst.SetNStim(4)
@@ -318,6 +326,8 @@ func (ss *Sim) ConfigEnv() {
 	tst.NoRewVal = 0
 	tst.Trial.Max = ss.Config.NTrials
 	tst.SwapStoreIgnore = ss.SwapStoreIgnore
+	tst.RewardCorrectProb = ss.RewardCorrectProb
+	tst.RewardIncorrectProb = ss.RewardIncorrectProb
 
 	trn.Init(0)
 	tst.Init(0)
@@ -404,10 +414,12 @@ func (ss *Sim) ApplyParams() {
 	matn.Matrix.BurstGain = ss.BurstDaGain
 	matn.Matrix.DipGain = ss.DipDaGain
 
-	// Retrieve training and testing environments and update SwapStoreIgnore
+	// Retrieve training and testing environments and update SwapStoreIgnore and reward probs.
 	trn := ss.Envs.ByMode(etime.Train)
 	if sirEnv, ok := trn.(*SIREnv); ok && sirEnv != nil {
 		sirEnv.SwapStoreIgnore = ss.SwapStoreIgnore
+		sirEnv.RewardCorrectProb = ss.RewardCorrectProb
+		sirEnv.RewardIncorrectProb = ss.RewardIncorrectProb
 	} else {
 		fmt.Println("Failed to retrieve train environment or invalid type")
 	}
@@ -415,6 +427,8 @@ func (ss *Sim) ApplyParams() {
 	tst := ss.Envs.ByMode(etime.Test)
 	if sirEnv, ok := tst.(*SIREnv); ok && sirEnv != nil {
 		sirEnv.SwapStoreIgnore = ss.SwapStoreIgnore
+		sirEnv.RewardCorrectProb = ss.RewardCorrectProb
+		sirEnv.RewardIncorrectProb = ss.RewardIncorrectProb
 	} else {
 		fmt.Println("Failed to retrieve test environment or invalid type")
 	}
@@ -568,6 +582,11 @@ func (ss *Sim) ApplyReward(train bool) {
 	} else {
 		en = ss.Envs.ByMode(etime.Test).(*SIREnv)
 	}
+	// Apply reward settings so that changes can be made without resetting weights via init.
+	en.SwapStoreIgnore = ss.SwapStoreIgnore
+	en.RewardCorrectProb = ss.RewardCorrectProb
+	en.RewardIncorrectProb = ss.RewardIncorrectProb
+
 	if en.Act != Recall { // only reward on recall trials!
 		return
 	}

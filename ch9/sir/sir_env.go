@@ -27,6 +27,10 @@ type SIREnv struct {
 	// Swap the role of store/ignore in reward sturcture
 	SwapStoreIgnore bool
 
+	// The probability of rewarding a correct and incorrect recall
+	RewardCorrectProb   float32
+	RewardIncorrectProb float32
+
 	// name of this environment
 	Name string
 
@@ -127,9 +131,17 @@ func (ev *SIREnv) SetReward(netout int) bool {
 	rw := netout == cor
 	fmt.Printf("SetReward called: netout = %d, cor = %d\n", netout, cor)
 	if rw {
-		ev.Reward.Values[0] = float64(ev.RewVal)
+		if rand.Float32() < ev.RewardCorrectProb {
+			ev.Reward.Values[0] = 1
+		} else {
+			ev.Reward.Values[0] = 0
+		}
 	} else {
-		ev.Reward.Values[0] = float64(ev.NoRewVal)
+		if rand.Float32() < ev.RewardIncorrectProb {
+			ev.Reward.Values[0] = 1
+		} else {
+			ev.Reward.Values[0] = 0
+		}
 	}
 	return rw
 }
@@ -137,6 +149,7 @@ func (ev *SIREnv) SetReward(netout int) bool {
 // Step the SIR task
 func (ev *SIREnv) StepSIR() {
 	fmt.Printf("Swap: %t\n", ev.SwapStoreIgnore)
+	fmt.Printf("Reward probs: correct = %f, incorrect = %f\n", ev.RewardCorrectProb, ev.RewardIncorrectProb)
 	for {
 		ev.Act = Actions(rand.Intn(int(ActionsN)))
 		if ev.Act == Store && ev.Maint >= 0 && !ev.SwapStoreIgnore { // already full
