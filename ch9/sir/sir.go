@@ -200,7 +200,7 @@ type Config struct {
 	NRuns int `default:"10" min:"1"`
 
 	// total number of epochs per run
-	NEpochs int `default:"100"`
+	NEpochs int `default:"200"`
 
 	// total number of trials per epochs per run
 	NTrials int `default:"100"`
@@ -222,6 +222,9 @@ type Sim struct {
 
 	// Swap the role of store/ignore in reward sturcture
 	SwapStoreIgnore bool
+
+	// Run for 100 epochs with one setting and then swap reward structure
+	SwitchRewInTask bool
 
 	// The probability of rewarding a correct and incorrect recall
 	RewardCorrectProb   float32
@@ -284,6 +287,7 @@ func (ss *Sim) Defaults() {
 	ss.BurstDaGain = 1
 	ss.DipDaGain = 1
 	ss.SwapStoreIgnore = false
+	ss.SwitchRewInTask = false
 	ss.RewardCorrectProb = 1
 	ss.RewardIncorrectProb = 0
 }
@@ -511,6 +515,9 @@ func (ss *Sim) ConfigLoops() {
 		}
 		curNZero := ss.Stats.Int("NZero")
 		stop := curNZero >= stopNz
+		if ss.SwitchRewInTask { // do not want early stopping if switching rewards
+			stop = false
+		}
 		return stop
 	})
 
@@ -520,6 +527,13 @@ func (ss *Sim) ConfigLoops() {
 		if (ss.Config.TestInterval > 0) && ((trainEpoch.Counter.Cur+1)%ss.Config.TestInterval == 0) {
 			// Note the +1 so that it doesn't occur at the 0th timestep.
 			ss.TestAll()
+		}
+	})
+
+	trainEpoch.OnEnd.Add("SwitchRewardStructure", func() {
+		if (trainEpoch.Counter.Cur == 100) && (ss.SwitchRewInTask) { // After 50 epochs
+			ss.SwapStoreIgnore = !ss.SwapStoreIgnore // Reverse reward structure
+			ss.ApplyParams()                         // Ensure environments are updated
 		}
 	})
 
