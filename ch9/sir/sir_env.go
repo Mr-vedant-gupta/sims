@@ -148,8 +148,8 @@ func (ev *SIREnv) SetReward(netout int) bool {
 
 // Step the SIR task
 func (ev *SIREnv) StepSIR() {
-	fmt.Printf("Swap: %t\n", ev.SwapStoreIgnore)
-	fmt.Printf("Reward probs: correct = %f, incorrect = %f\n", ev.RewardCorrectProb, ev.RewardIncorrectProb)
+	// fmt.Printf("Swap: %t\n", ev.SwapStoreIgnore)
+	// fmt.Printf("Reward probs: correct = %f, incorrect = %f\n", ev.RewardCorrectProb, ev.RewardIncorrectProb)
 	for {
 		ev.Act = Actions(rand.Intn(int(ActionsN)))
 		if ev.Act == Store && ev.Maint >= 0 && !ev.SwapStoreIgnore { // already full

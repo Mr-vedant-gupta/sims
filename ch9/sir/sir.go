@@ -72,10 +72,11 @@ var ParamSets = params.Sets{
 			}},
 		{Sel: ".RWPath", Desc: "Reward prediction -- into PVi",
 			Params: params.Params{
-				"Path.Learn.Lrate": "0.02",
-				"Path.WtInit.Mean": "0",
-				"Path.WtInit.Var":  "0",
-				"Path.WtInit.Sym":  "false",
+				"Path.Learn.Lrate":     "0.02",
+				"Path.Learn.LrateInit": "0.02",
+				"Path.WtInit.Mean":     "0",
+				"Path.WtInit.Var":      "0",
+				"Path.WtInit.Sym":      "false",
 			}},
 		{Sel: "#Rew", Desc: "Reward layer -- no clamp limits",
 			Params: params.Params{
@@ -110,6 +111,7 @@ var ParamSets = params.Sets{
 		{Sel: ".MatrixPath", Desc: "Matrix learning",
 			Params: params.Params{
 				"Path.Learn.Lrate":         "0.04", // .04 > .1
+				"Path.Learn.LrateInit":     "0.04",
 				"Path.WtInit.Var":          "0.1",
 				"Path.Trace.GateNoGoPosLR": "1",    // 0.1 default
 				"Path.Trace.NotGatedLR":    "0.7",  // 0.7 default
@@ -226,6 +228,12 @@ type Sim struct {
 	// Run for 100 epochs with one setting and then swap reward structure
 	SwitchRewInTask bool
 
+	// Use Entropy measures to modulate the learning rate
+	ModLearnRate bool
+
+	// A binary switch for the entropy measure to use (see CalcEntropy)
+	EntropyMeasureType bool
+
 	// The probability of rewarding a correct and incorrect recall
 	RewardCorrectProb   float32
 	RewardIncorrectProb float32
@@ -287,6 +295,8 @@ func (ss *Sim) Defaults() {
 	ss.BurstDaGain = 1
 	ss.DipDaGain = 1
 	ss.SwapStoreIgnore = false
+	ss.ModLearnRate = false
+	ss.EntropyMeasureType = false
 	ss.SwitchRewInTask = false
 	ss.RewardCorrectProb = 1
 	ss.RewardIncorrectProb = 0
@@ -587,6 +597,35 @@ func (ss *Sim) ApplyInputs() {
 	}
 }
 
+func (ss *Sim) CalcEntropy() float32 {
+	if !ss.ModLearnRate { //do not modify learning rate
+		return 1
+	}
+	TmpVals := []float32{}
+	ent := float32(0)
+	if ss.EntropyMeasureType { // first entropy measure: sum of activations in hidden layer
+		hid := ss.Net.LayerByName("Hidden")
+		hid.UnitValues(&TmpVals, "AvgM", -1)
+		for i, _ := range TmpVals {
+			ent += TmpVals[i]
+		}
+		// Clamp ent to a desirable range
+		ent = ent / 10
+		if ent < 0.25 {
+			ent = 0.25
+		} else if ent > 4 {
+			ent = 4
+		}
+	} else { // second entropy measure: activation difference in GPiThal
+		hid := ss.Net.LayerByName("GPiThal")
+		hid.UnitValues(&TmpVals, "AvgM", -1)
+		diff := math32.Abs(TmpVals[0] - TmpVals[1])
+		ent = 4 - diff*3.2
+	}
+	fmt.Printf("Ent: %g\n", ent)
+	return ent
+}
+
 // ApplyReward computes reward based on network output and applies it.
 // Call at start of 3rd quarter (plus phase).
 func (ss *Sim) ApplyReward(train bool) {
@@ -610,6 +649,27 @@ func (ss *Sim) ApplyReward(train bool) {
 	pats := en.State("Rew")
 	ly := ss.Net.LayerByName("Rew")
 	ly.ApplyExt1DTsr(pats)
+
+	// control the learning rate in the Matrix and RewPred as a fuction of "entropy"
+
+	ent := ss.CalcEntropy()
+	matg := ss.Net.LayerByName("MatrixGo")
+	matng := ss.Net.LayerByName("MatrixNoGo")
+	rwpred := ss.Net.LayerByName("RWPred")
+	matg.LrateMult(ent)
+	matng.LrateMult(ent)
+	rwpred.LrateMult(ent)
+
+	if len(matg.RecvPaths) > 0 {
+		ss.Stats.SetFloat32("MatrixGoLRate", matg.RecvPaths[0].Learn.Lrate)
+	}
+	if len(matng.RecvPaths) > 0 {
+		ss.Stats.SetFloat32("MatrixNoGoLRate", matng.RecvPaths[0].Learn.Lrate)
+	}
+	if len(rwpred.RecvPaths) > 0 {
+		ss.Stats.SetFloat32("RWPredLRate", rwpred.RecvPaths[0].Learn.Lrate)
+	}
+
 }
 
 // NewRun intializes a new run of the model, using the TrainEnv.Run counter
@@ -627,6 +687,7 @@ func (ss *Sim) NewRun() {
 	ss.StatCounters()
 	ss.Logs.ResetLog(etime.Train, etime.Epoch)
 	ss.Logs.ResetLog(etime.Test, etime.Epoch)
+	ss.Params.SetAll()
 }
 
 // TestAll runs through the full set of testing items
@@ -646,6 +707,9 @@ func (ss *Sim) InitStats() {
 	ss.Stats.SetFloat("DA", 0.0)
 	ss.Stats.SetFloat("AbsDA", 0.0)
 	ss.Stats.SetFloat("RewPred", 0.0)
+	ss.Stats.SetFloat("MatrixGoLRate", 0.0)
+	ss.Stats.SetFloat("MatrixNoGoLRate", 0.0)
+	ss.Stats.SetFloat("RWPredLRate", 0.0)
 	ss.Stats.SetString("TrialName", "")
 	ss.Logs.InitErrStats() // inits TrlErr, FirstZero, LastZero, NZero
 }
@@ -719,9 +783,11 @@ func (ss *Sim) ConfigLogs() {
 	ss.Logs.AddStatAggItem("DA", etime.Run, etime.Epoch, etime.Trial)
 	ss.Logs.AddStatAggItem("AbsDA", etime.Run, etime.Epoch, etime.Trial)
 	ss.Logs.AddStatAggItem("RewPred", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("MatrixGoLRate", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("MatrixNoGoLRate", etime.Run, etime.Epoch, etime.Trial)
+	ss.Logs.AddStatAggItem("RWPredLRate", etime.Run, etime.Epoch, etime.Trial)
 
 	ss.Logs.PlotItems("PctErr", "AbsDA", "RewPred")
-
 	ss.Logs.CreateTables()
 	ss.Logs.SetContext(&ss.Stats, ss.Net)
 	// don't plot certain combinations we don't use
