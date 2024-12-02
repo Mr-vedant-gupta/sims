@@ -606,15 +606,17 @@ func (ss *Sim) CalcEntropy() float32 {
 	if ss.EntropyMeasureType { // first entropy measure: sum of activations in hidden layer
 		hid := ss.Net.LayerByName("Hidden")
 		hid.UnitValues(&TmpVals, "AvgM", -1)
+		maxAct := float32(0)
 		for i, _ := range TmpVals {
+			maxAct = max(maxAct, TmpVals[i])
 			ent += TmpVals[i]
 		}
-		// Clamp ent to a desirable range
+		// Clamp ent to a desirable range. If the max act among hidden units is too low, set ent to max.
 		ent = ent / 10
-		if ent < 0.25 {
-			ent = 0.25
-		} else if ent > 4 {
+		if maxAct < 0.02 || ent > 4 {
 			ent = 4
+		} else if ent < 0.25 {
+			ent = 0.25
 		}
 	} else { // second entropy measure: activation difference in GPiThal
 		hid := ss.Net.LayerByName("GPiThal")
