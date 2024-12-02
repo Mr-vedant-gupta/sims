@@ -541,7 +541,7 @@ func (ss *Sim) ConfigLoops() {
 	})
 
 	trainEpoch.OnEnd.Add("SwitchRewardStructure", func() {
-		if (trainEpoch.Counter.Cur == 100) && (ss.SwitchRewInTask) { // After 50 epochs
+		if (trainEpoch.Counter.Cur%100 == 0) && (ss.SwitchRewInTask) { // Every 100 epochs
 			ss.SwapStoreIgnore = !ss.SwapStoreIgnore // Reverse reward structure
 			ss.ApplyParams()                         // Ensure environments are updated
 		}
