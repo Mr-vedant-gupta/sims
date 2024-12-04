@@ -27,8 +27,10 @@ type SIREnv struct {
 	// Swap the role of store/ignore in reward sturcture
 	SwapStoreIgnore bool
 
-	// The probability of rewarding a correct and incorrect recall
-	RewardCorrectProb   float32
+	// The probability of rewarding a correct recall
+	RewardCorrectProb float32
+
+	// The probability of rewarding a recall of the last ignored stimulus
 	RewardIncorrectProb float32
 
 	// name of this environment
@@ -51,6 +53,9 @@ type SIREnv struct {
 
 	// current stimulus being maintained
 	Maint int
+
+	// current stimulus to be ignored
+	IncorrectMaint int
 
 	// input pattern with stim
 	Input tensor.Float64
@@ -136,7 +141,7 @@ func (ev *SIREnv) SetReward(netout int) bool {
 		} else {
 			ev.Reward.Values[0] = 0
 		}
-	} else {
+	} else if netout == ev.IncorrectMaint {
 		if rand.Float32() < ev.RewardIncorrectProb {
 			ev.Reward.Values[0] = 1
 		} else {
@@ -169,6 +174,7 @@ func (ev *SIREnv) StepSIR() {
 		if ev.SwapStoreIgnore {
 			// Ignore behavior when swapped
 			// No operation needed here
+			ev.IncorrectMaint = ev.Stim
 		} else {
 			// Store behavior
 			ev.Maint = ev.Stim
@@ -178,6 +184,7 @@ func (ev *SIREnv) StepSIR() {
 			// Store behavior when swapped
 			ev.Maint = ev.Stim
 		} else {
+			ev.IncorrectMaint = ev.Stim
 			// Ignore behavior
 			// No operation needed here
 		}

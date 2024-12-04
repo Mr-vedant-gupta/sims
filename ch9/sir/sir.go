@@ -228,14 +228,19 @@ type Sim struct {
 	// Run for 100 epochs with one setting and then swap reward structure
 	SwitchRewInTask bool
 
+	// Gradually reduce reward correct prob and increase reward incorrect prob towards end of each 100 epochs
+	UseGradualReversals bool
+
 	// Use Entropy measures to modulate the learning rate
 	ModLearnRate bool
 
 	// A binary switch for the entropy measure to use (see CalcEntropy)
 	EntropyMeasureType bool
 
-	// The probability of rewarding a correct and incorrect recall
-	RewardCorrectProb   float32
+	// The probability of rewarding a correct recall
+	RewardCorrectProb float32
+
+	// The probability of rewarding a recall of the last ignored stimulus
 	RewardIncorrectProb float32
 
 	// BurstDaGain is the strength of dopamine bursts: 1 default -- reduce for PD OFF, increase for PD ON
@@ -298,6 +303,7 @@ func (ss *Sim) Defaults() {
 	ss.ModLearnRate = false
 	ss.EntropyMeasureType = false
 	ss.SwitchRewInTask = false
+	ss.UseGradualReversals = false
 	ss.RewardCorrectProb = 1
 	ss.RewardIncorrectProb = 0
 }
@@ -540,10 +546,11 @@ func (ss *Sim) ConfigLoops() {
 		}
 	})
 
+	// Reverse reward structure every 100 epochs if option toggled.
 	trainEpoch.OnEnd.Add("SwitchRewardStructure", func() {
-		if (trainEpoch.Counter.Cur%100 == 0) && (ss.SwitchRewInTask) { // Every 100 epochs
-			ss.SwapStoreIgnore = !ss.SwapStoreIgnore // Reverse reward structure
-			ss.ApplyParams()                         // Ensure environments are updated
+		if trainEpoch.Counter.Cur != 0 && trainEpoch.Counter.Cur%100 == 0 && ss.SwitchRewInTask {
+			ss.SwapStoreIgnore = !ss.SwapStoreIgnore
+			ss.ApplyParams() // Ensure environments are updated
 		}
 	})
 
@@ -641,6 +648,18 @@ func (ss *Sim) ApplyReward(train bool) {
 	en.SwapStoreIgnore = ss.SwapStoreIgnore
 	en.RewardCorrectProb = ss.RewardCorrectProb
 	en.RewardIncorrectProb = ss.RewardIncorrectProb
+
+	// If switching tasks with gradual reversals, decrease reward correct prob and
+	// increase reward incorrect prob linearly during epochs 80-99.
+	if ss.SwitchRewInTask && ss.UseGradualReversals {
+		epochWithinHundred := ss.Loops.Stacks[etime.Train].Loops[etime.Epoch].Counter.Cur % 100
+		if epochWithinHundred >= 80 {
+			adjustedRewardCorrectProb := (100 - float32(epochWithinHundred)) / 20 * ss.RewardCorrectProb
+			adjustedRewardIncorrectProb := (float32(epochWithinHundred) - 80) / 20 * ss.RewardIncorrectProb
+			en.RewardCorrectProb = adjustedRewardCorrectProb
+			en.RewardIncorrectProb = adjustedRewardIncorrectProb
+		}
+	}
 
 	if en.Act != Recall { // only reward on recall trials!
 		return
