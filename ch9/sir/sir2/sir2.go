@@ -546,24 +546,40 @@ func (ss *Sim) CalcEntropy() float32 {
 		} else if ent < 0.25 {
 			ent = 0.25
 		}
-	} else { // second entropy measure: activation difference in GPiThal
+	} else { // GPiThal entropy calculation for up to 16 units active
 		hid := ss.Net.LayerByName("GPiThal")
 		hid.UnitValues(&TmpVals, "AvgM", -1)
-		// Since we have multiple units, compute pairwise differences
-		maxDiff := float32(0)
-		for i := 0; i < len(TmpVals)-1; i++ {
-			for j := i + 1; j < len(TmpVals); j++ {
-				diff := math32.Abs(TmpVals[i] - TmpVals[j])
-				if diff > maxDiff {
-					maxDiff = diff
+
+		// Compute probabilities of activation
+		var totalActivation float32
+		for _, val := range TmpVals {
+			totalActivation += val
+		}
+
+		if totalActivation > 0 {
+			for _, val := range TmpVals {
+				prob := val / totalActivation
+				if prob > 0 {
+					ent -= prob * math32.Log(prob)
 				}
 			}
 		}
-		ent = 4 - maxDiff*3.2
+
+		// Scale entropy to a desirable range
+		ent = ent / 2.77 // Normalize entropy for 16 units (max entropy ~2.77 for uniform dist)
+		if ent > 4 {
+			ent = 4
+		} else if ent < 0.25 {
+			ent = 0.25
+		}
 	}
 	fmt.Printf("Ent: %g\n", ent)
 	return ent
 }
+
+
+
+
 
 // ApplyReward computes reward based on network output and applies it.
 // Call at start of 3rd quarter (plus phase).
